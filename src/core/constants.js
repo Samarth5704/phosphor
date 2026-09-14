@@ -9,15 +9,18 @@ export const TUNING = Object.freeze({
   // --- rack geometry ------------------------------------------------------
   RACK_COL_SPACING: 16,
   RACK_ROW_SPACING: 16,
-  ALIEN_W: 12, // one hitbox for all three types; silhouettes differ, boxes do not
+  // Per-type hitbox widths, centred inside the widest cell. Rows 0-1 are the
+  // bottom type, 2-3 the middle type, 4 the top type.
+  ALIEN_W_BOTTOM: 12,
+  ALIEN_W_MIDDLE: 11,
+  ALIEN_W_TOP: 8,
   ALIEN_H: 8,
   RACK_START_X: 24, // origin = bottom-left alien's top-left corner
   RACK_MARGIN_LEFT: 8, // rack reverses when its leftmost living alien would cross this
   RACK_MARGIN_RIGHT: 216, // ... or its rightmost living alien would cross this
   ROW_DROP: 8, // pixels dropped on each reversal
   RACK_START_Y: 120, // origin y on wave 1
-  RACK_DESCENT_PER_WAVE: 8,
-  RACK_DESCENT_STOP_WAVE: 6, // waves 6 and later all start at the wave-6 height
+  RACK_DESCENT_PER_WAVE: 8, // each wave in the 9-wave cycle (RULES.WAVE_HEIGHT_CYCLE) starts this much lower
 
   // --- cannon -------------------------------------------------------------
   CANNON_Y: 216,
@@ -39,13 +42,23 @@ export const TUNING = Object.freeze({
   INVADER_RELOAD_STEPS: 48, // minimum steps between invader shots
   INVADER_RELOAD_JITTER: 32, // + rng in [0, jitter]
   GROUND_Y: 240, // invader shots vanish when their bottom edge reaches this
+  // When the player's shot meets an invader missile the player's shot always
+  // dies; the missile survives with this percentage chance, drawn from the
+  // seeded rng. The sources describe this only qualitatively (squiggly almost
+  // always survives, the others usually do not); the numbers are ours.
+  MISSILE_SURVIVAL_PERCENT: Object.freeze({ rolling: 20, plunger: 20, squiggly: 95 }),
 
   // --- UFO ----------------------------------------------------------------
   UFO_Y: 40,
   UFO_W: 16,
   UFO_H: 7,
   UFO_SPEED: 1,
-  UFO_INTERVAL_STEPS: 1500, // minimum steps between appearances
+  // Minimum steps between appearances. The UFO award is indexed by the fired
+  // shot count, and index 7 (300 points) first comes up on the 8th shot; the
+  // documented "23rd shot" framing holds only because no UFO is on screen that
+  // early in a wave. Lowering this interval makes the 8th-shot award
+  // reachable and changes documented behaviour.
+  UFO_INTERVAL_STEPS: 1500,
   UFO_INTERVAL_JITTER: 300, // + rng in [0, jitter]
   UFO_MIN_ALIENS: 8, // no UFO while fewer aliens remain
   UFO_SCORE_DISPLAY_STEPS: 60,

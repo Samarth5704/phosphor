@@ -14,7 +14,7 @@ function botActions(s, mem) {
   for (let c = 0; c < R.RACK_COLS; c++) {
     const idx = lowestLivingInColumn(s.rack, c);
     if (idx === -1) continue;
-    const d = Math.abs(s.rack.aliens[idx].x + T.ALIEN_W / 2 - cannonMid);
+    const d = Math.abs(s.rack.aliens[idx].x + T.ALIEN_W_BOTTOM / 2 - cannonMid);
     if (d < best) { best = d; bestCol = c; }
   }
   const danger = s.invaderShots.find((sh) => sh.y > 150 && Math.abs(sh.x - cannonMid) < 12);
@@ -23,7 +23,7 @@ function botActions(s, mem) {
     want = danger.x < cannonMid ? ACTIONS.MOVE_RIGHT : ACTIONS.MOVE_LEFT;
   } else if (bestCol >= 0) {
     const a = s.rack.aliens[lowestLivingInColumn(s.rack, bestCol)];
-    const dx = a.x + T.ALIEN_W / 2 - cannonMid;
+    const dx = a.x + T.ALIEN_W_BOTTOM / 2 - cannonMid;
     want = dx > 1 ? ACTIONS.MOVE_RIGHT : dx < -1 ? ACTIONS.MOVE_LEFT : null;
   }
   if (want !== mem.held) {
@@ -50,11 +50,14 @@ function checkInvariants(s) {
   for (const a of s.rack.aliens) {
     int(a.x, 'alien.x');
     int(a.y, 'alien.y');
-    if (a.alive) assert.ok(a.x >= 0 && a.x + T.ALIEN_W <= R.FIELD_W, 'alien inside the field');
+    if (a.alive) assert.ok(a.x >= 0 && a.x + T.ALIEN_W_BOTTOM <= R.FIELD_W, 'alien inside the field');
   }
   if (s.playerShot) { int(s.playerShot.x, 'shot.x'); int(s.playerShot.y, 'shot.y'); }
   for (const sh of s.invaderShots) { int(sh.x, 'invader shot x'); int(sh.y, 'invader shot y'); }
-  assert.ok(s.invaderShots.length <= R.INVADER_SHOT_SLOTS - (s.ufo ? 1 : 0), 'object budget respected');
+  assert.ok(s.invaderShots.length <= R.INVADER_SHOT_SLOTS, 'at most three invader shots');
+  assert.ok(!(s.ufo && s.invaderShots.some((sh) => sh.type === R.UFO_SHARES_SLOT_WITH)), 'UFO and squiggly never share the screen');
+  const types = s.invaderShots.map((sh) => sh.type);
+  assert.equal(new Set(types).size, types.length, 'one missile per type');
   if (s.ufo) int(s.ufo.x, 'ufo.x');
   int(s.rng.counter, 'rng.counter');
 }

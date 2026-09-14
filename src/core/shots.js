@@ -7,7 +7,7 @@ import { RULES } from './rules.js';
 import { TUNING } from './constants.js';
 import { overlaps } from './collision.js';
 import { nextInt } from './rng.js';
-import { alienBox, killAlien, lowestLivingInColumn } from './rack.js';
+import { alienBox, killAlien, lowestLivingInColumn, aliensAliveInRack } from './rack.js';
 import { hitShields } from './shields.js';
 import { ufoBox, killUfo } from './ufo.js';
 
@@ -52,11 +52,20 @@ export function stepPlayerShot(state) {
     }
     const aliens = state.rack.aliens;
     for (let i = 0; i < aliens.length; i++) {
-      if (aliens[i].alive && overlaps(box, alienBox(aliens[i]))) {
+      if (aliens[i].alive && overlaps(box, alienBox(aliens[i], i))) {
         killAlien(state, i);
         state.playerShot = null;
         return;
       }
+    }
+    // Player shot versus invader missile: the player's shot always dies; the
+    // missile survives with its type's tuned probability.
+    for (let m = 0; m < state.invaderShots.length; m++) {
+      const missile = state.invaderShots[m];
+      if (!overlaps(box, invaderShotBox(missile))) continue;
+      if (!missileSurvives(state, missile.type)) state.invaderShots.splice(m, 1);
+      state.playerShot = null;
+      return;
     }
     if (hitShields(state.shields, box, TUNING.PLAYER_SHOT_EROSION)) {
       state.playerShot = null;
@@ -69,13 +78,24 @@ export function stepPlayerShot(state) {
   }
 }
 
-// ---- invader shots ---------------------------------------------------------
-
-function invaderShotBudget(state) {
-  return RULES.INVADER_SHOT_SLOTS - (state.ufo ? 1 : 0);
+// One rng draw per collision. Exported so a test can find a counter value
+// that lands on either branch.
+export function missileSurvives(state, type) {
+  return nextInt(state.rng, 100) < TUNING.MISSILE_SURVIVAL_PERCENT[type];
 }
 
-function hasShotOfType(state, type) {
+// ---- invader shots ---------------------------------------------------------
+
+// Why this type may not fire right now. Each type owns one slot; the UFO
+// shares the squiggly's; the plunger is disabled at one alien remaining.
+function typeBlocked(state, type) {
+  if (hasShotOfType(state, type)) return true;
+  if (type === RULES.UFO_SHARES_SLOT_WITH && state.ufo) return true;
+  if (type === 'plunger' && aliensAliveInRack(state.rack) === RULES.PLUNGER_DISABLED_AT_ALIENS) return true;
+  return false;
+}
+
+export function hasShotOfType(state, type) {
   return state.invaderShots.some((s) => s.type === type);
 }
 
@@ -87,7 +107,7 @@ function aimedColumn(state) {
   let bestDist = Infinity;
   for (let col = 0; col < RULES.RACK_COLS; col++) {
     if (lowestLivingInColumn(rack, col) === -1) continue;
-    const centre = rack.originX + col * TUNING.RACK_COL_SPACING + TUNING.ALIEN_W / 2;
+    const centre = rack.originX + col * TUNING.RACK_COL_SPACING + TUNING.ALIEN_W_BOTTOM / 2;
     const d = Math.abs(centre - target);
     if (d < bestDist) {
       bestDist = d;
@@ -119,27 +139,24 @@ function columnFor(state, type) {
   return tableColumn(state, RULES.SQUIGGLY_COLUMNS, 'squigglyIndex');
 }
 
-// Round-robin through the three types starting at nextInvaderShotType. Returns
-// true if a shot spawned. Respects the five-object budget: three slots, or two
-// while a UFO is on screen.
+// One firing attempt for the scheduled type only; there is no fall-through to
+// another type. The round robin advances whether or not the shot spawned.
+// Returns true if a shot spawned.
 export function tryFireInvaderShot(state) {
-  if (state.invaderShots.length >= invaderShotBudget(state)) return false;
-  for (let n = 0; n < SHOT_TYPES.length; n++) {
-    const t = (state.nextInvaderShotType + n) % SHOT_TYPES.length;
-    const type = SHOT_TYPES[t];
-    if (hasShotOfType(state, type)) continue;
-    const col = columnFor(state, type);
-    if (col === -1) continue;
-    const src = state.rack.aliens[lowestLivingInColumn(state.rack, col)];
-    state.invaderShots.push({
-      type,
-      x: src.x + Math.floor((TUNING.ALIEN_W - TUNING.INVADER_SHOT_W) / 2),
-      y: src.y + TUNING.ALIEN_H,
-    });
-    state.nextInvaderShotType = (t + 1) % SHOT_TYPES.length;
-    return true;
-  }
-  return false;
+  const t = state.nextInvaderShotType;
+  state.nextInvaderShotType = (t + 1) % SHOT_TYPES.length;
+  const type = SHOT_TYPES[t];
+  if (typeBlocked(state, type)) return false;
+  const col = columnFor(state, type);
+  if (col === -1) return false;
+  const i = lowestLivingInColumn(state.rack, col);
+  const src = alienBox(state.rack.aliens[i], i);
+  state.invaderShots.push({
+    type,
+    x: src.x + Math.floor((src.w - TUNING.INVADER_SHOT_W) / 2),
+    y: src.y + src.h,
+  });
+  return true;
 }
 
 // Reload countdown; when it reaches zero, one firing attempt and a refill from

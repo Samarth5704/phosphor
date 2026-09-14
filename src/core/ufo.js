@@ -36,8 +36,9 @@ export function killUfo(state) {
   state.ufo = null;
 }
 
-// invaderShotCount is passed in so this module never has to look at shots.js.
-export function stepUfo(state, invaderShotCount) {
+// slotBusy says whether the squiggly shot the UFO shares a slot with is in
+// flight; it is passed in so this module never has to look at shots.js.
+export function stepUfo(state, slotBusy) {
   if (state.ufo) {
     state.ufo.x += state.ufo.dir * TUNING.UFO_SPEED;
     const gone = state.ufo.dir > 0
@@ -52,6 +53,6 @@ export function stepUfo(state, invaderShotCount) {
   }
   // Timer elapsed: wait (without consuming rng) until the conditions hold.
   if (aliensAliveInRack(state.rack) < TUNING.UFO_MIN_ALIENS) return;
-  if (invaderShotCount >= RULES.INVADER_SHOT_SLOTS) return;
+  if (slotBusy) return;
   spawnUfo(state);
 }

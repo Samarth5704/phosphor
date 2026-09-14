@@ -67,6 +67,29 @@ export function erodeShield(shield, px, py, mask) {
   }
 }
 
+// Clears every shield cell the box overlaps (the descending rack's erosion).
+// Returns the number of cells that were set and are now clear.
+export function eraseShieldArea(shields, box) {
+  let cleared = 0;
+  for (const shield of shields) {
+    if (!overlaps(box, shield)) continue;
+    const x0 = Math.max(0, box.x - shield.x);
+    const x1 = Math.min(shield.w, box.x + box.w - shield.x);
+    const y0 = Math.max(0, box.y - shield.y);
+    const y1 = Math.min(shield.h, box.y + box.h - shield.y);
+    for (let py = y0; py < y1; py++) {
+      for (let px = x0; px < x1; px++) {
+        const k = py * shield.w + px;
+        if (shield.pixels[k]) {
+          shield.pixels[k] = 0;
+          cleared++;
+        }
+      }
+    }
+  }
+  return cleared;
+}
+
 // Tests a box against every shield; on the first pixel hit, erodes with the
 // mask and returns true.
 export function hitShields(shields, box, mask) {

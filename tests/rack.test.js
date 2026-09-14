@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { step, aliensAlive, marchPeriod } from '../src/core/state.js';
-import { createRack, rackStartY, alienIndex, alienHomeX, alienHomeY } from '../src/core/rack.js';
+import { createRack, rackStartY, alienIndex, alienHomeX, alienHomeY, alienBox } from '../src/core/rack.js';
+import { createShields, shieldPixel, shieldPixelCount, eraseShieldArea } from '../src/core/shields.js';
 import {
   newGame, quiet, run, killColumns, killAllBut, placeRack, rackSnapshot, TUNING as T, RULES as R,
 } from './helpers.js';
@@ -37,9 +38,9 @@ test('the reference alien still defines the rack origin after it has been killed
 test('a rack whose rightmost living column is 7 reverses when column 7 reaches the margin, not when the dead column 11 would have', () => {
   const s = quiet(newGame());
   killColumns(s, [7, 8, 9, 10]); // 1-indexed columns 8..11 dead; rightmost living is column 7 (index 6)
-  const col7Right = (ox) => ox + 6 * SP + T.ALIEN_W;
-  const col11Right = (ox) => ox + 10 * SP + T.ALIEN_W;
-  const ox = T.RACK_MARGIN_RIGHT - 10 - 6 * SP - T.ALIEN_W; // column 7 is 10px short of the margin
+  const col7Right = (ox) => ox + 6 * SP + T.ALIEN_W_BOTTOM;
+  const col11Right = (ox) => ox + 10 * SP + T.ALIEN_W_BOTTOM;
+  const ox = T.RACK_MARGIN_RIGHT - 10 - 6 * SP - T.ALIEN_W_BOTTOM; // column 7 is 10px short of the margin
   assert.ok(col11Right(ox) + R.RACK_STEP_X > T.RACK_MARGIN_RIGHT, 'precondition: a full rack would reverse on the first pass');
   const y0 = s.rack.originY;
   placeRack(s, ox, y0);
@@ -124,7 +125,7 @@ test('each alien is repositioned to origin plus its column and row offset when i
 test('an alien reaching the cannon row ends the game while three cannons remain', () => {
   const s = quiet(newGame());
   const oy = T.CANNON_Y - T.ALIEN_H; // bottom edge touches but does not overlap the cannon row
-  const ox = T.RACK_MARGIN_RIGHT - (10 * SP + T.ALIEN_W); // on the margin: next pass reverses and drops
+  const ox = T.RACK_MARGIN_RIGHT - (10 * SP + T.ALIEN_W_BOTTOM); // on the margin: next pass reverses and drops
   placeRack(s, ox, oy);
   run(s, 55);
   assert.equal(s.gameOver, false, 'origin has dropped but no alien has been redrawn there yet');
@@ -133,13 +134,23 @@ test('an alien reaching the cannon row ends the game while three cannons remain'
   assert.equal(s.lives, 3);
 });
 
-test('the rack starting height descends per wave and stops descending at wave 6', () => {
+test('waves 2 through 9 start progressively lower, wave 10 reverts to wave 1 height and wave 19 to wave 1 again', () => {
+  assert.equal(R.WAVE_HEIGHT_CYCLE, 9);
   assert.equal(rackStartY(1), T.RACK_START_Y);
-  assert.equal(rackStartY(2), T.RACK_START_Y + T.RACK_DESCENT_PER_WAVE);
-  assert.equal(rackStartY(6), T.RACK_START_Y + 5 * T.RACK_DESCENT_PER_WAVE);
-  assert.equal(rackStartY(7), rackStartY(6));
-  assert.equal(rackStartY(40), rackStartY(6));
+  for (let w = 2; w <= 9; w++) {
+    assert.equal(rackStartY(w), rackStartY(w - 1) + T.RACK_DESCENT_PER_WAVE, `wave ${w} is one step lower than wave ${w - 1}`);
+  }
+  assert.equal(rackStartY(9), T.RACK_START_Y + 8 * T.RACK_DESCENT_PER_WAVE);
+  assert.equal(rackStartY(10), rackStartY(1));
+  assert.equal(rackStartY(11), rackStartY(2));
+  assert.equal(rackStartY(19), rackStartY(1));
   assert.equal(createRack(3).originY, rackStartY(3));
+});
+
+test('the wave-9 start height leaves the bottom row above the shields and the cannon row', () => {
+  const bottomEdge = rackStartY(9) + T.ALIEN_H;
+  assert.ok(bottomEdge <= T.SHIELD_Y, `bottom edge ${bottomEdge} must not start inside the shields at ${T.SHIELD_Y}`);
+  assert.ok(bottomEdge <= T.CANNON_Y);
 });
 
 test('a new rack has 55 living aliens in 11 columns and 5 rows all at their home positions', () => {
@@ -163,4 +174,108 @@ test('aliensAlive and marchPeriod are computed from the rack, not stored', () =>
   assert.equal(marchPeriod(s), 50);
   assert.equal(Object.hasOwn(s, 'aliensAlive'), false);
   assert.equal(Object.hasOwn(s.rack, 'alive'), false);
+});
+
+// ---- E: per-type hitbox widths ---------------------------------------------
+
+test('a shot passing through the horizontal gap beside the narrowest alien type does not register a hit, while the same shot at the same x against the widest type does', () => {
+  assert.ok(T.ALIEN_W_TOP < T.ALIEN_W_MIDDLE && T.ALIEN_W_MIDDLE < T.ALIEN_W_BOTTOM);
+  const gapX = 1; // inside the bottom type's 12px box, outside the top type's centred 8px box
+  const inset = Math.floor((T.ALIEN_W_BOTTOM - T.ALIEN_W_TOP) / 2);
+  assert.ok(gapX < inset, 'precondition: x=1 lies in the gap beside the top type');
+
+  const top = quiet(newGame());
+  killAllBut(top, [alienIndex(5, 4)]);
+  const a = top.rack.aliens[alienIndex(5, 4)];
+  top.playerShot = { x: a.x + gapX, y: a.y + T.ALIEN_H + 1 };
+  step(top, []);
+  assert.equal(a.alive, true, 'top type not hit through the gap');
+  assert.ok(top.playerShot, 'shot flew on');
+
+  const bottom = quiet(newGame());
+  killAllBut(bottom, [alienIndex(5, 0)]);
+  const b = bottom.rack.aliens[alienIndex(5, 0)];
+  bottom.playerShot = { x: b.x + gapX, y: b.y + T.ALIEN_H + 1 };
+  step(bottom, []);
+  assert.equal(b.alive, false, 'bottom type hit at the same x');
+});
+
+test('alien hitboxes are 12, 11 and 8 wide by row type and narrower boxes are centred in the cell', () => {
+  const rack = createRack(1);
+  const box = (col, row) => alienBox(rack.aliens[alienIndex(col, row)], alienIndex(col, row));
+  assert.equal(box(0, 0).w, T.ALIEN_W_BOTTOM);
+  assert.equal(box(0, 1).w, T.ALIEN_W_BOTTOM);
+  assert.equal(box(0, 2).w, T.ALIEN_W_MIDDLE);
+  assert.equal(box(0, 3).w, T.ALIEN_W_MIDDLE);
+  assert.equal(box(0, 4).w, T.ALIEN_W_TOP);
+  assert.equal(box(0, 4).x, rack.aliens[alienIndex(0, 4)].x + 2);
+  assert.equal(box(0, 0).x, rack.aliens[alienIndex(0, 0)].x);
+});
+
+test('a rack whose only living aliens are top type reverses by the narrow box, 2px later than the bottom box would', () => {
+  const s = quiet(newGame());
+  killAllBut(s, [alienIndex(10, 4)]);
+  const inset = Math.floor((T.ALIEN_W_BOTTOM - T.ALIEN_W_TOP) / 2);
+  // place the top alien's right edge exactly 2px inside the margin: one more pass moves it, the next reverses
+  const ox = T.RACK_MARGIN_RIGHT - 2 - (10 * SP + inset + T.ALIEN_W_TOP);
+  placeRack(s, ox, s.rack.originY);
+  step(s, []);
+  assert.equal(s.rack.dir, 1, 'narrow box still fits');
+  assert.equal(s.rack.originX, ox + 2);
+  step(s, []);
+  assert.equal(s.rack.dir, -1);
+});
+
+// ---- C: the descending rack erodes shields -------------------------------
+
+test('an alien whose box overlaps a shield erases exactly the overlapping cells and leaves the rest of the shield intact', () => {
+  const s = quiet(newGame());
+  const sh = s.shields[0];
+  killAllBut(s, [0]);
+  const i = 0;
+  // park the bottom-left alien so its box covers shield columns 2..13 and rows 0..3
+  placeRack(s, sh.x + 2, sh.y - 4);
+  const before = shieldPixelCount(sh);
+  const box = alienBox(s.rack.aliens[i], i);
+  let expectedCleared = 0;
+  for (let py = 0; py < sh.h; py++) {
+    for (let px = 0; px < sh.w; px++) {
+      const inside = px >= box.x - sh.x && px < box.x + box.w - sh.x && py >= box.y - sh.y && py < box.y + box.h - sh.y;
+      if (inside && shieldPixel(sh, px, py)) expectedCleared++;
+    }
+  }
+  assert.ok(expectedCleared > 0, 'precondition: the overlap contains set pixels');
+  step(s, []); // alien 0 is repositioned onto the shield
+  assert.equal(shieldPixelCount(sh), before - expectedCleared);
+  for (let py = 0; py < sh.h; py++) {
+    for (let px = 0; px < sh.w; px++) {
+      const inside = px >= box.x - sh.x && px < box.x + box.w - sh.x && py >= box.y - sh.y && py < box.y + box.h - sh.y;
+      if (inside) assert.equal(shieldPixel(sh, px, py), 0, `cell ${px},${py} inside the overlap is clear`);
+      else assert.equal(shieldPixel(sh, px, py), T.SHIELD_BITMAP[py][px] === '#' ? 1 : 0, `cell ${px},${py} outside is untouched`);
+    }
+  }
+  assert.equal(shieldPixelCount(s.shields[1]), shieldPixelCount(createShields()[1]), 'other shields untouched');
+});
+
+test('a shield already fully eroded at the overlap is unchanged and no error is raised', () => {
+  const s = quiet(newGame());
+  const sh = s.shields[0];
+  sh.pixels.fill(0);
+  killAllBut(s, [0]);
+  placeRack(s, sh.x + 2, sh.y - 4);
+  assert.doesNotThrow(() => step(s, []));
+  assert.equal(shieldPixelCount(sh), 0);
+  assert.equal(eraseShieldArea(s.shields, alienBox(s.rack.aliens[0], 0)), 0);
+});
+
+test('erosion by the rack does not award score', () => {
+  const s = quiet(newGame());
+  const sh = s.shields[0];
+  killAllBut(s, [0]);
+  placeRack(s, sh.x + 2, sh.y - 4);
+  const before = shieldPixelCount(sh);
+  step(s, []);
+  assert.ok(shieldPixelCount(sh) < before, 'precondition: something was eroded');
+  assert.equal(s.score, 0);
+  assert.equal(s.lives, 3);
 });

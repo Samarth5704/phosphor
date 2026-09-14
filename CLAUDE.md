@@ -58,16 +58,28 @@ modelled on the 1978 Taito arcade machine; every byte here is original.
 
 One alien updated per simulation step, so wave speed is emergent. Bottom-left
 reference alien that keeps defining the origin after death. One player shot on
-screen at a time. Five moving objects, with a UFO taking an invader shot slot.
-Plunger columns `1,7,1,1,1,4,11,1,6,3,1,1,11,9,2,8`; squiggly columns
+screen at a time. Five moving objects, one slot per invader shot type; the UFO
+shares the **squiggly's** slot specifically, so the two are never on screen
+together. Each type fires only on its own round-robin turn — no fall-through.
+The plunger is disabled while exactly one alien remains. Plunger columns
+`1,7,1,1,1,4,11,1,6,3,1,1,11,9,2,8`; squiggly columns
 `11,1,6,3,1,1,11,9,2,8,2,11,4,7,10`; dead columns skipped. 16-step freeze on an
 alien exploding. Scores 10/20/30 by row, extra cannon once at 1500. UFO award
-cycles `50,50,100,150,100,100,50,300,100,100,100,50,150,100,100` indexed by
-fired shot count. Four destructible shields eroded by both sides.
+cycles `50,50,100,150,100,100,50,300,100,100,100,50,150,100,100` as
+`cycle[(shotsFired − 1) mod 15]`, so the 8th, 23rd, 38th… shots award 300.
+Player shot meeting an invader missile: the player's shot always dies, the
+missile survives by a per-type chance (squiggly nearly always). Four
+destructible shields eroded by player fire, invader fire and the descending
+rack. Wave start heights descend through wave 9 and wave 10 reverts to wave 1.
 
-Everything else — drop distance, speeds, UFO interval, shield shape, decay
-curve, audio frequencies — is our tuning and lives in one exported constants
-object. Never describe our tuning as authentic.
+The readings in `docs/spec.md` §4.1.1 (freeze counted after the kill step;
+FIRE edge-triggered) are decisions, not defaults. Changing one bumps
+`SIM_VERSION`.
+
+Everything else — drop distance, speeds, UFO interval, shield shape, hitbox
+widths, missile survival percentages, decay curve, audio frequencies — is our
+tuning and lives in one exported constants object. Never describe our tuning
+as authentic.
 
 ## Accessibility, which is a requirement and not a polish pass
 

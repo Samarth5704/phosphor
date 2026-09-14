@@ -12,7 +12,7 @@ import { createRng } from './rng.js';
 import { createRack, stepRack, aliensAliveInRack } from './rack.js';
 import { createShields } from './shields.js';
 import { scheduleUfo, stepUfo } from './ufo.js';
-import { firePlayerShot, stepPlayerShot, stepInvaderShots, invaderFireTick } from './shots.js';
+import { firePlayerShot, stepPlayerShot, stepInvaderShots, invaderFireTick, hasShotOfType } from './shots.js';
 
 // Bump when a change alters how a recorded action log replays. Phase 2 refuses
 // fixtures recorded against a different version.
@@ -173,7 +173,7 @@ export function step(state, actions = []) {
     invaderFireTick(state);
   }
 
-  stepUfo(state, state.invaderShots.length);
+  stepUfo(state, hasShotOfType(state, RULES.UFO_SHARES_SLOT_WITH));
 
   if (aliensAlive(state) === 0) state.waveClearTimer = TUNING.WAVE_CLEAR_DELAY_STEPS;
 

@@ -102,17 +102,34 @@ requirements. Deviating from one means changing this spec first.
 | Step size | The reference alien moves 2px horizontally per rack cycle |
 | Reversal | On touching a margin the rack drops one row and reverses |
 | Player shot | **At most one player shot on screen at a time** |
-| Object budget | Five moving objects: cannon, player shot, three invader shots. A UFO on screen takes one invader shot slot, so only two invader shots may exist while it is there. |
-| Shot types | Three: *rolling* (aimed at the cannon), *plunger*, *squiggly*. Only rolling aims. |
+| Object budget | Five moving objects: cannon, player shot, three invader shots, one slot per shot type. **The UFO shares the squiggly shot's slot specifically**: a squiggly cannot be fired while a UFO is on screen, and a UFO cannot appear while a squiggly is in flight. Rolling and plunger shots are unaffected by the UFO. |
+| Shot types | Three: *rolling* (aimed at the cannon), *plunger*, *squiggly*. Only rolling aims. Each type owns one slot and fires only on its own turn of the round robin; a type that cannot fire (slot busy, no living column, disabled) fires nothing that turn — there is no fall-through to another type. |
+| Plunger disabled | **The plunger shot is disabled entirely while exactly one alien remains.** Rolling and squiggly stay active. |
 | Plunger columns | `1, 7, 1, 1, 1, 4, 11, 1, 6, 3, 1, 1, 11, 9, 2, 8` — cycled, 1-indexed |
 | Squiggly columns | `11, 1, 6, 3, 1, 1, 11, 9, 2, 8, 2, 11, 4, 7, 10` — cycled, 1-indexed |
 | Dead column | If the scheduled column has no living alien, it is skipped and the next table entry is used |
 | Explosion freeze | An exploding alien freezes rack movement and firing for exactly 16 steps |
 | Scores | Bottom two rows 10, middle two 20, top row 30 |
 | Extra cannon | Awarded once, at 1500 points |
-| UFO score | Indexed by the player's **fired shot count** through the 15-value cycle `50, 50, 100, 150, 100, 100, 50, 300, 100, 100, 100, 50, 150, 100, 100`. The 23rd shot and every 15th thereafter award 300. It is not random. |
-| Shields | Four destructible shields, eroded by both player and invader fire |
+| UFO score | Indexed by the player's **fired shot count** through the 15-value cycle `50, 50, 100, 150, 100, 100, 50, 300, 100, 100, 100, 50, 150, 100, 100`: award = `cycle[(shotsFired − 1) mod 15]`. **The 8th, 23rd, 38th and every 15th shot thereafter award 300.** The sources' "23rd shot" framing holds only because the UFO does not appear early enough in a wave for the 8th shot to reach one; lowering our UFO interval would make the 8th-shot award reachable. It is not random. |
+| Shot vs missile | When the player's shot and an invader missile overlap, **the player's shot is always destroyed**. The missile survives with a per-type probability drawn from the seeded rng: the squiggly almost always survives, the rolling and plunger usually do not. The asymmetry is documented; the probabilities are ours (§4.2). |
+| Shields | Four destructible shields, eroded by player fire, by invader fire, **and by the descending rack**: an alien whose box overlaps a shield erases every overlapping cell. Rack erosion awards no score. |
+| Wave heights | Waves 2 through 9 start progressively lower than wave 1; **wave 10 reverts to wave 1's starting height** and the cycle repeats. The distance per wave is ours (§4.2). |
 | Loss | All cannons lost, **or** any alien reaching the cannon row, ends the game immediately |
+
+#### 4.1.1 Recorded readings
+
+Where the sources leave a choice, the reading below is the one the simulation
+implements and the one Phase 2 hashes. Changing one changes `SIM_VERSION`.
+
+- **Explosion freeze timing.** The freeze is 16 steps of no rack movement and
+  no invader firing **after** the step on which the kill resolved. The rack has
+  already taken its move on the kill step; it is frozen for the next 16 steps
+  and moves again on the 17th step after the kill.
+- **FIRE is edge-triggered** on the `down` phase. Holding FIRE does not
+  auto-fire; a new shot requires a new `down` after the slot is free. A `down`
+  that arrives while a shot is live is discarded and does not count as a fired
+  shot.
 
 ### 4.2 Our tuning — not claimed as authentic
 
@@ -124,7 +141,13 @@ reviewer can find them in one place.
 - Cannon movement speed, shot speeds (player and invader)
 - UFO appearance interval and traversal speed
 - Shield bitmap layout and erosion mask shape
-- Starting rack height per wave and the wave at which it stops descending
+- Wave 1 starting rack height and the per-wave drop distance within the
+  documented 9-wave cycle (the cycle itself is §4.1)
+- Alien hitbox widths per type (the three types are §4.1; our boxes are
+  12, 11 and 8 px, centred in a 12 px cell)
+- Missile survival probabilities when the player's shot meets an invader
+  missile (the asymmetry is §4.1; our numbers are rolling 20%, plunger 20%,
+  squiggly 95%)
 - Phosphor decay curve: the mapping from aliens-alive to decay constant
 - Audio frequencies, envelopes and durations
 

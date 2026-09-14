@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { step } from '../src/core/state.js';
-import { tryFireInvaderShot, SHOT_TYPES } from '../src/core/shots.js';
+import { tryFireInvaderShot, missileSurvives, SHOT_TYPES } from '../src/core/shots.js';
+import { shieldPixelCount } from '../src/core/shields.js';
 import { alienIndex } from '../src/core/rack.js';
 import {
   newGame, quiet, run, act, killColumns, killAllBut, mkInvaderShot, TUNING as T, RULES as R,
@@ -92,7 +93,7 @@ test('a plunger shot whose scheduled column is entirely dead skips to the next t
   assert.equal(s.invaderShots[0].type, 'plunger');
   assert.equal(s.plungerIndex, 2, 'both entries consumed in one step');
   const src = s.rack.aliens[alienIndex(6, 0)]; // column 7, bottom row
-  assert.equal(s.invaderShots[0].x, src.x + Math.floor((T.ALIEN_W - T.INVADER_SHOT_W) / 2));
+  assert.equal(s.invaderShots[0].x, src.x + Math.floor((T.ALIEN_W_BOTTOM - T.INVADER_SHOT_W) / 2));
   assert.equal(s.invaderShots[0].y, src.y + T.ALIEN_H);
 });
 
@@ -105,7 +106,7 @@ test('the plunger table wraps from index 15 back to index 0', () => {
   assert.equal(s.invaderShots.length, 1);
   assert.equal(s.plungerIndex, 0);
   const src = s.rack.aliens[alienIndex(R.PLUNGER_COLUMNS[15] - 1, 0)];
-  assert.equal(s.invaderShots[0].x, src.x + Math.floor((T.ALIEN_W - T.INVADER_SHOT_W) / 2));
+  assert.equal(s.invaderShots[0].x, src.x + Math.floor((T.ALIEN_W_BOTTOM - T.INVADER_SHOT_W) / 2));
 });
 
 test('the squiggly table wraps from index 14 back to index 0', () => {
@@ -118,23 +119,21 @@ test('the squiggly table wraps from index 14 back to index 0', () => {
   assert.equal(s.invaderShots[0].type, 'squiggly');
   assert.equal(s.squigglyIndex, 0);
   const src = s.rack.aliens[alienIndex(R.SQUIGGLY_COLUMNS[14] - 1, 0)];
-  assert.equal(s.invaderShots[0].x, src.x + Math.floor((T.ALIEN_W - T.INVADER_SHOT_W) / 2));
+  assert.equal(s.invaderShots[0].x, src.x + Math.floor((T.ALIEN_W_BOTTOM - T.INVADER_SHOT_W) / 2));
 });
 
-test('a plunger whose entire table has no living column fires no plunger shot and leaves its index where it started, and the round robin falls through to the aimed rolling shot', () => {
+test('a plunger whose entire table has no living column fires nothing this tick and leaves its index where it started; there is no fall-through to another type', () => {
   const s = quiet(newGame());
-  killAllBut(s, [alienIndex(4, 0)]); // column 5 is in neither table
+  killAllBut(s, [alienIndex(4, 0), alienIndex(4, 1)]); // two aliens so the plunger is enabled; column 5 is in neither table
   assert.ok(!R.PLUNGER_COLUMNS.includes(5));
-  assert.ok(!R.SQUIGGLY_COLUMNS.includes(5));
   s.plungerIndex = 3;
   s.squigglyIndex = 4;
   armed(s, PLUNGER);
   step(s, []);
-  assert.equal(s.invaderShots.filter((sh) => sh.type === 'plunger').length, 0);
+  assert.equal(s.invaderShots.length, 0, 'no shot of any type');
   assert.equal(s.plungerIndex, 3);
   assert.equal(s.squigglyIndex, 4);
-  assert.equal(s.invaderShots.length, 1);
-  assert.equal(s.invaderShots[0].type, 'rolling');
+  assert.equal(s.nextInvaderShotType, SQUIGGLY, 'the round robin still moved on');
 });
 
 test('a rolling shot spawns from the lowest living alien in the column nearest the cannon', () => {
@@ -146,41 +145,221 @@ test('a rolling shot spawns from the lowest living alien in the column nearest t
   assert.equal(s.invaderShots.length, 1);
   assert.equal(s.invaderShots[0].type, 'rolling');
   const src = s.rack.aliens[alienIndex(5, 1)];
-  assert.equal(s.invaderShots[0].x, src.x + Math.floor((T.ALIEN_W - T.INVADER_SHOT_W) / 2));
+  assert.equal(s.invaderShots[0].x, src.x + Math.floor((T.ALIEN_W_BOTTOM - T.INVADER_SHOT_W) / 2));
   assert.equal(s.invaderShots[0].y, src.y + T.ALIEN_H);
 });
 
+test('an invader shot from a top-type alien spawns centred under its narrow box, not under the cell', () => {
+  const s = quiet(newGame());
+  killColumns(s, [0, 1, 2, 3, 4, 5, 7, 8, 9, 10]);
+  for (let row = 0; row < 4; row++) s.rack.aliens[alienIndex(6, row)].alive = false; // only column 7's top alien
+  s.rack.aliens[alienIndex(0, 0)].alive = true; // a second alien so the plunger is not disabled
+  s.plungerIndex = 1; // column 7
+  armed(s, PLUNGER);
+  step(s, []);
+  assert.equal(s.invaderShots.length, 1);
+  const src = s.rack.aliens[alienIndex(6, 4)];
+  const inset = Math.floor((T.ALIEN_W_BOTTOM - T.ALIEN_W_TOP) / 2);
+  assert.equal(s.invaderShots[0].x, src.x + inset + Math.floor((T.ALIEN_W_TOP - T.INVADER_SHOT_W) / 2));
+});
+
 test('with a UFO on screen, a fourth invader shot cannot spawn while three exist, and only two may exist alongside it', () => {
+  // The UFO holds the squiggly's slot, so with a UFO the most the invaders can field is rolling + plunger.
   const s = quiet(newGame());
   s.ufo = { x: 100, dir: 1 };
   s.invaderShots = [mkInvaderShot('rolling'), mkInvaderShot('plunger'), mkInvaderShot('squiggly')];
-  assert.equal(tryFireInvaderShot(s), false);
+  for (const t of [ROLLING, PLUNGER, SQUIGGLY]) {
+    s.nextInvaderShotType = t;
+    assert.equal(tryFireInvaderShot(s), false, `type ${t} cannot make a fourth`);
+  }
   assert.equal(s.invaderShots.length, 3);
   s.invaderShots = [mkInvaderShot('rolling'), mkInvaderShot('plunger')];
-  assert.equal(tryFireInvaderShot(s), false, 'the UFO holds the third slot');
+  s.nextInvaderShotType = SQUIGGLY;
+  assert.equal(tryFireInvaderShot(s), false, 'the UFO holds the squiggly slot');
   assert.equal(s.invaderShots.length, 2);
   s.invaderShots = [mkInvaderShot('rolling')];
-  assert.equal(tryFireInvaderShot(s), true);
+  s.nextInvaderShotType = PLUNGER;
+  assert.equal(tryFireInvaderShot(s), true, 'the plunger slot is unaffected by the UFO');
   assert.equal(s.invaderShots.length, 2);
 });
 
 test('without a UFO, a third invader shot may spawn but a fourth may not', () => {
   const s = quiet(newGame());
   s.invaderShots = [mkInvaderShot('rolling'), mkInvaderShot('plunger')];
+  s.nextInvaderShotType = SQUIGGLY;
   assert.equal(tryFireInvaderShot(s), true);
   assert.equal(s.invaderShots.length, 3);
-  assert.equal(tryFireInvaderShot(s), false);
+  for (const t of [ROLLING, PLUNGER, SQUIGGLY]) {
+    s.nextInvaderShotType = t;
+    assert.equal(tryFireInvaderShot(s), false);
+  }
   assert.equal(s.invaderShots.length, 3);
 });
 
-test('a type whose own shot is still live is skipped and the next type fires instead', () => {
+test('a type whose own shot is still live does not fire, and the round robin moves on to the next type for the following attempt', () => {
   const s = quiet(newGame());
   s.invaderShots = [mkInvaderShot('rolling')];
   s.nextInvaderShotType = ROLLING;
+  assert.equal(tryFireInvaderShot(s), false, 'rolling is busy; nothing else fires in its place');
+  assert.equal(s.invaderShots.length, 1);
+  assert.equal(s.nextInvaderShotType, PLUNGER);
   assert.equal(tryFireInvaderShot(s), true);
-  assert.equal(s.invaderShots.length, 2);
   assert.equal(s.invaderShots[1].type, 'plunger');
-  assert.equal(s.nextInvaderShotType, SQUIGGLY, 'round robin continues after the type that fired');
+  assert.equal(s.nextInvaderShotType, SQUIGGLY);
+});
+
+// ---- B: plunger disabled at one alien; UFO shares the squiggly slot -------
+
+test('with one alien remaining, no plunger shot is ever scheduled and the plunger table index does not advance', () => {
+  const s = quiet(newGame());
+  killAllBut(s, [alienIndex(0, 0)]); // column 1 is in the plunger table, so only the disable rule can stop it
+  assert.equal(R.PLUNGER_COLUMNS[0], 1);
+  s.plungerIndex = 0;
+  s.nextInvaderShotType = PLUNGER;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    s.nextInvaderShotType = PLUNGER;
+    s.invaderShots = [];
+    assert.equal(tryFireInvaderShot(s), false, `attempt ${attempt}`);
+  }
+  assert.equal(s.plungerIndex, 0);
+  // through the real reload path over many ticks as well
+  s.invaderReload = 0;
+  s.nextInvaderShotType = PLUNGER;
+  const seen = new Set();
+  for (let i = 0; i < 600; i++) {
+    step(s, []);
+    for (const sh of s.invaderShots) seen.add(sh.type);
+  }
+  assert.equal(seen.has('plunger'), false);
+  assert.equal(s.plungerIndex, 0);
+});
+
+test('with one alien remaining, rolling and squiggly shots are still scheduled', () => {
+  const s = quiet(newGame());
+  killAllBut(s, [alienIndex(0, 0)]); // column 1 appears in the squiggly table too
+  s.nextInvaderShotType = ROLLING;
+  assert.equal(tryFireInvaderShot(s), true);
+  assert.equal(s.invaderShots[0].type, 'rolling');
+  s.nextInvaderShotType = SQUIGGLY;
+  assert.equal(tryFireInvaderShot(s), true);
+  assert.equal(s.invaderShots[1].type, 'squiggly');
+});
+
+test('with two aliens remaining, plunger scheduling still occurs', () => {
+  const s = quiet(newGame());
+  killAllBut(s, [alienIndex(0, 0), alienIndex(6, 0)]);
+  s.plungerIndex = 0; // column 1
+  s.nextInvaderShotType = PLUNGER;
+  assert.equal(tryFireInvaderShot(s), true);
+  assert.equal(s.invaderShots[0].type, 'plunger');
+  assert.equal(s.plungerIndex, 1);
+});
+
+test('a squiggly shot cannot spawn while a UFO is on screen, and the UFO cannot appear while a squiggly is in flight', () => {
+  const s = quiet(newGame());
+  s.ufo = { x: 100, dir: 1 };
+  s.nextInvaderShotType = SQUIGGLY;
+  s.squigglyIndex = 0;
+  assert.equal(tryFireInvaderShot(s), false);
+  assert.equal(s.invaderShots.length, 0);
+  assert.equal(s.squigglyIndex, 0, 'the squiggly table did not advance');
+
+  const t = quiet(newGame());
+  t.ufoTimer = 0;
+  t.invaderShots = [mkInvaderShot('squiggly', 100, 100)];
+  run(t, 3);
+  assert.equal(t.ufo, null, 'no UFO while the squiggly flies');
+  t.invaderShots = [mkInvaderShot('rolling', 100, 100), mkInvaderShot('plunger', 120, 100)];
+  step(t, []);
+  assert.ok(t.ufo, 'rolling and plunger in flight do not block the UFO');
+});
+
+// ---- D: player shot versus invader missile -------------------------------
+
+// Find an rng counter from which the next draw lands on the wanted branch.
+function counterFor(state, type, survive) {
+  for (let c = 0; c < 10000; c++) {
+    const probe = { rng: { seed: state.rng.seed, counter: c } };
+    if (missileSurvives(probe, type) === survive) return c;
+  }
+  throw new Error('no counter found');
+}
+
+test('a player shot colliding with a rolling missile is destroyed on that step', () => {
+  const s = quiet(newGame());
+  s.invaderShots = [mkInvaderShot('rolling', 100, 150)];
+  s.playerShot = { x: 101, y: 150 + T.INVADER_SHOT_H + 1 };
+  step(s, []);
+  assert.equal(s.playerShot, null);
+});
+
+test('the player shot slot is freed on the same step as the collision, so FIRE on the next step spawns a new shot', () => {
+  const s = quiet(newGame());
+  s.invaderShots = [mkInvaderShot('rolling', 100, 150)];
+  s.playerShot = { x: 101, y: 150 + T.INVADER_SHOT_H + 1 };
+  s.shotsFired = 1;
+  step(s, []);
+  assert.equal(s.playerShot, null);
+  step(s, [act(s, 'FIRE')]);
+  assert.ok(s.playerShot);
+  assert.equal(s.shotsFired, 2);
+});
+
+test('with the rng forced to its surviving branch, the invader missile continues on its original path with its column schedule unchanged', () => {
+  const s = quiet(newGame());
+  s.rng.counter = counterFor(s, 'rolling', true);
+  s.plungerIndex = 5;
+  s.squigglyIndex = 7;
+  s.nextInvaderShotType = PLUNGER;
+  s.invaderShots = [mkInvaderShot('rolling', 100, 150)];
+  s.playerShot = { x: 101, y: 150 + T.INVADER_SHOT_H + 1 };
+  const counter = s.rng.counter;
+  step(s, []);
+  assert.equal(s.playerShot, null, 'the player shot always dies');
+  assert.equal(s.invaderShots.length, 1, 'the missile survived');
+  assert.equal(s.invaderShots[0].type, 'rolling');
+  assert.equal(s.invaderShots[0].x, 100, 'same column');
+  assert.equal(s.invaderShots[0].y, 150 + T.INVADER_SHOT_SPEED, 'kept descending at its speed');
+  assert.equal(s.rng.counter, counter + 1, 'exactly one draw was made');
+  assert.equal(s.plungerIndex, 5);
+  assert.equal(s.squigglyIndex, 7);
+  assert.equal(s.nextInvaderShotType, PLUNGER);
+  step(s, []);
+  assert.equal(s.invaderShots[0].y, 150 + 2 * T.INVADER_SHOT_SPEED);
+});
+
+test('with the rng forced to its destroyed branch, a squiggly missile is removed on the collision step', () => {
+  const s = quiet(newGame());
+  s.rng.counter = counterFor(s, 'squiggly', false);
+  s.invaderShots = [mkInvaderShot('squiggly', 100, 150)];
+  s.playerShot = { x: 101, y: 150 + T.INVADER_SHOT_H + 1 };
+  step(s, []);
+  assert.equal(s.playerShot, null);
+  assert.equal(s.invaderShots.length, 0);
+});
+
+test('the tuned survival chances make the squiggly the survivor and the other two usually die', () => {
+  const p = T.MISSILE_SURVIVAL_PERCENT;
+  assert.ok(p.squiggly >= 90);
+  assert.ok(p.rolling <= 50 && p.plunger <= 50);
+  const s = quiet(newGame());
+  let survived = 0;
+  for (let i = 0; i < 1000; i++) if (missileSurvives(s, 'squiggly')) survived++;
+  assert.ok(survived > 850, `squiggly survived ${survived}/1000`);
+  survived = 0;
+  for (let i = 0; i < 1000; i++) if (missileSurvives(s, 'rolling')) survived++;
+  assert.ok(survived < 400, `rolling survived ${survived}/1000`);
+});
+
+test('a player shot that meets an invader missile does not erode the shield behind it', () => {
+  const s = quiet(newGame());
+  const sh = s.shields[0];
+  const before = shieldPixelCount(sh);
+  s.invaderShots = [mkInvaderShot('plunger', sh.x + 8, sh.y + sh.h + 1)];
+  s.playerShot = { x: sh.x + 9, y: sh.y + sh.h + 1 + T.INVADER_SHOT_H + 1 };
+  step(s, []);
+  assert.equal(s.playerShot, null);
+  assert.equal(shieldPixelCount(sh), before);
 });
 
 test('no invader shot spawns during the 16-step explosion freeze and one spawns on the 17th step', () => {
