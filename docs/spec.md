@@ -142,7 +142,14 @@ reviewer can find them in one place.
 - UFO appearance interval and traversal speed
 - Shield bitmap layout and erosion mask shape
 - Wave 1 starting rack height and the per-wave drop distance within the
-  documented 9-wave cycle (the cycle itself is §4.1)
+  documented 9-wave cycle (the cycle itself is §4.1). **These are coupled to
+  `SHIELD_Y`:** the wave-9 rack starts at `RACK_START_Y + 8 ×
+  RACK_DESCENT_PER_WAVE`, and its bottom row's lower edge, `+ ALIEN_H`, must
+  not exceed `SHIELD_Y`, or a fresh wave-9 rack erases shield cells on its
+  first pass. With the current numbers the two are equal (192): the rack
+  touches the shield top without overlapping it. Changing any one of the four
+  constants means re-checking the other three; `tests/rack.test.js` pins the
+  inequality.
 - Alien hitbox widths per type (the three types are §4.1; our boxes are
   12, 11 and 8 px, centred in a 12 px cell)
 - Missile survival probabilities when the player's shot meets an invader

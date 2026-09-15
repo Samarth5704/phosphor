@@ -1,10 +1,11 @@
-﻿{
+{
   "name": "phosphor",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test \"tests/*.test.js\"",
+    "test:guard": "node tests/zero-test-guard.mjs tests"
   }
 }

@@ -64,6 +64,12 @@ export const TUNING = Object.freeze({
   UFO_SCORE_DISPLAY_STEPS: 60,
 
   // --- shields ------------------------------------------------------------
+  // SHIELD_Y is coupled to the wave-height cycle: the wave-9 rack starts at
+  // RACK_START_Y + 8 * RACK_DESCENT_PER_WAVE = 184, so its bottom row's lower
+  // edge (184 + ALIEN_H) is exactly 192, touching the shield top without
+  // overlapping it. Raising RACK_START_Y or RACK_DESCENT_PER_WAVE, or lowering
+  // SHIELD_Y, makes a fresh wave-9 rack erase shield cells on its first pass.
+  // tests/rack.test.js pins the inequality; spec §4.2 records it.
   SHIELD_Y: 192,
   SHIELD_XS: Object.freeze([32, 77, 122, 167]),
   SHIELD_BITMAP: Object.freeze([
