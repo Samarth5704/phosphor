@@ -1,0 +1,23 @@
+/* Phase 3b: the play field only. Every colour comes from a custom property
+   that applyTokens() generates from src/tokens.js; nothing is restated here.
+   The fallback values in var() exist only for the instant before the module
+   runs and match tokens.js. */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--color-field-black, #000000);
+  overflow: hidden;
+}
+
+#field {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  /* One field pixel is a whole number of device pixels: never resample it. */
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  background: var(--color-field-black, #000000);
+}

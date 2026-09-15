@@ -1,11 +1,15 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Phosphor</title>
+<link rel="stylesheet" href="./src/ui/phosphor.css">
 </head>
 <body>
-<p>Phase 1 is headless. Nothing renders yet.</p>
+<!-- Phase 3b: the phosphor field, driven by the committed replay fixture.
+     No input yet. The HUD arrives as DOM in Phase 5. -->
+<canvas id="field" width="224" height="256" aria-label="Phosphor play field, replaying a recorded game"></canvas>
+<script type="module" src="./src/ui/main.js"></script>
 </body>
 </html>
