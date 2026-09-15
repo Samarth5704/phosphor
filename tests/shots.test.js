@@ -36,7 +36,7 @@ test('firing while a player shot is already live is a no-op and does not increme
 
 test('a shot that leaves the top of the field frees the player shot slot on the same step', () => {
   const s = quiet(newGame());
-  s.playerShot = { x: 50, y: 0 }; // bottom edge will reach y <= 0 after one step
+  s.playerShot = { x: 50, y: T.PLAYER_SHOT_SPEED - T.PLAYER_SHOT_H }; // bottom edge reaches exactly 0 after one step
   step(s, []);
   assert.equal(s.playerShot, null);
   step(s, [act(s, 'FIRE')]);

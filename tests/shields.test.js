@@ -8,19 +8,35 @@ function fillRow(shield, row) {
   for (let x = 0; x < shield.w; x++) shield.pixels[row * shield.w + x] = 1;
 }
 
-test('a shot travelling 4px per step across a 1px shield row erodes that row instead of passing through it', () => {
-  assert.equal(T.PLAYER_SHOT_SPEED, 4);
+test('a shot whose leading edge would skip a 1px shield row in one step still erodes that row, because the path is swept 1px at a time', () => {
+  // At PLAYER_SHOT_SPEED >= 2 the leading edge lands on every SPEED-th row,
+  // so a leading-edge check at the end position passes over a 1px row. (The
+  // shot's PLAYER_SHOT_H-tall box happens to bridge the gap while SPEED < H,
+  // which is why this asserts the sub-step of first contact, not merely that
+  // a hit happened.)
+  assert.ok(T.PLAYER_SHOT_SPEED >= 2, 'a row can be skipped by a leading edge');
   const s = quiet(newGame());
   const sh = s.shields[0];
   sh.pixels.fill(0);
   fillRow(sh, 10);
   const rowY = sh.y + 10;
-  // 1px below the row at the start; the swept path crosses it on the 2nd of 4 sub-steps
+  // Box top 2px below the row: it first overlaps the row on the 2nd sub-step
+  // of the sweep, before the end position, whatever the speed.
   s.playerShot = { x: sh.x + 5, y: rowY + 2 };
   step(s, []);
-  assert.equal(s.playerShot, null, 'shot consumed');
+  assert.equal(s.playerShot, null, 'shot consumed on this step');
   assert.equal(shieldPixel(sh, 5, 10), 0, 'impact pixel eroded');
   assert.equal(shieldPixel(sh, 20, 10), 1, 'pixels far from the impact survive');
+  // The same geometry, one step of travel earlier, must not touch the row:
+  // proves the hit above came from the sweep and not from a spawn overlap.
+  const s2 = quiet(newGame());
+  const sh2 = s2.shields[0];
+  sh2.pixels.fill(0);
+  fillRow(sh2, 10);
+  s2.playerShot = { x: sh2.x + 5, y: rowY + 2 + T.PLAYER_SHOT_SPEED };
+  step(s2, []);
+  assert.ok(s2.playerShot, 'still flying');
+  assert.equal(shieldPixel(sh2, 5, 10), 1, 'row untouched a step earlier');
 });
 
 test('a player shot erodes the shield at the first set pixel it meets, not at its end position', () => {
@@ -100,10 +116,12 @@ test('each erosion mask clears the impact pixel itself, so a second shot at the 
   const s = quiet(newGame());
   const sh = s.shields[0];
   const bottom = sh.h - 1;
+  // Step until the shot resolves: how many steps that takes depends on
+  // PLAYER_SHOT_SPEED and on how deep the previous bite went.
   const fire = () => {
     s.playerShot = { x: sh.x + 2, y: sh.y + sh.h + 1 };
-    step(s, []);
-    assert.equal(s.playerShot, null, 'shot consumed');
+    for (let i = 0; i < 10 && s.playerShot; i++) step(s, []);
+    assert.equal(s.playerShot, null, 'shot consumed within the shield');
   };
   fire();
   assert.equal(shieldPixel(sh, 2, bottom), 0);

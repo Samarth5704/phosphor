@@ -3,8 +3,9 @@
 // the state: no module-level variables, no closures, no clock. Cloning the
 // state clones the simulation.
 //
-// Derived values (aliens alive, march period, decay constant) are functions of
-// the state and are never stored on it.
+// Derived values (aliens alive, march period) are functions of the state and
+// are never stored on it. Phosphor persistence is derived from aliens alive
+// too, but by the renderer from src/tokens.js: it is not a simulation value.
 
 import { RULES } from './rules.js';
 import { TUNING } from './constants.js';
@@ -16,7 +17,8 @@ import { firePlayerShot, stepPlayerShot, stepInvaderShots, invaderFireTick, hasS
 
 // Bump when a change alters how a recorded action log replays. Phase 2 refuses
 // fixtures recorded against a different version.
-export const SIM_VERSION = 1;
+// 1: Phase 1 core.  2: PLAYER_SHOT_SPEED 4 -> 3 (Phase 3a addendum 2).
+export const SIM_VERSION = 2;
 
 export const ACTIONS = Object.freeze({
   MOVE_LEFT: 'MOVE_LEFT',
@@ -70,18 +72,6 @@ export function aliensAlive(state) {
 // Steps per full rack cycle: one alien per step, so the period is the count.
 export function marchPeriod(state) {
   return aliensAlive(state);
-}
-
-// Per-step intensity multiplier for the phosphor buffer, linear in aliens
-// alive between the two tuned endpoints.
-export function decayForAliens(alive) {
-  const t = Math.min(Math.max(alive, 1), RULES.RACK_COLS * RULES.RACK_ROWS) - 1;
-  const span = RULES.RACK_COLS * RULES.RACK_ROWS - 1;
-  return TUNING.DECAY_AT_1 + (TUNING.DECAY_AT_55 - TUNING.DECAY_AT_1) * (t / span);
-}
-
-export function decayConstant(state) {
-  return decayForAliens(aliensAlive(state));
 }
 
 // ---- the step --------------------------------------------------------------

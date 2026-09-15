@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  SIM_VERSION, ACTIONS, createState, cloneState, step, aliensAlive, decayConstant, decayForAliens,
+  SIM_VERSION, ACTIONS, createState, cloneState, step, aliensAlive,
 } from '../src/core/state.js';
 import { addScore } from '../src/core/scoring.js';
 import { killAlien, alienIndex, rackStartY } from '../src/core/rack.js';
@@ -111,15 +111,10 @@ test('clearing the last alien starts the next wave with a full rack after the cl
   assert.equal(s.freezeSteps, 0);
 });
 
-test('decayConstant is monotonic in aliens alive and takes the tuned values at 55 and at 1', () => {
-  assert.equal(decayForAliens(55), T.DECAY_AT_55);
-  assert.equal(decayForAliens(1), T.DECAY_AT_1);
-  for (let n = 2; n <= 55; n++) assert.ok(decayForAliens(n) >= decayForAliens(n - 1), `not monotonic at ${n}`);
-  assert.equal(decayForAliens(0), T.DECAY_AT_1, 'clamped below 1');
+test('the state carries no decay field: persistence is derived by the renderer from aliens alive, never stored', () => {
   const s = newGame();
-  assert.equal(decayConstant(s), T.DECAY_AT_55);
+  assert.equal(Object.hasOwn(s, 'decay'), false);
   killAllBut(s, [0]);
-  assert.equal(decayConstant(s), T.DECAY_AT_1);
   assert.equal(Object.hasOwn(s, 'decay'), false);
 });
 

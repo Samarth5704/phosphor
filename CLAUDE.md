@@ -45,7 +45,10 @@ modelled on the 1978 Taito arcade machine; every byte here is original.
    phase}` appended to a queue. Nothing reads the keyboard inside the core.
    This is what makes replay work; it is structural, not a feature.
 7. **One store owns all state.** Views subscribe. Derived values (aliens alive,
-   decay constant, march period) are computed, never stored.
+   march period) are computed, never stored. Phosphor decay is a **render
+   concern**: its sole source is `src/tokens.js`, the renderer derives it from
+   aliens alive, and it must never enter the hashed simulation state — a
+   decay value in state would tie the replay fixture to visual tuning.
 8. **Persisted data is versioned with `migrate()`.** Validate on load; corrupt
    data falls back to defaults; a higher version than the current one is left
    untouched and the session runs read-only.
@@ -79,7 +82,7 @@ FIRE edge-triggered) are decisions, not defaults. Changing one bumps
 **`SIM_VERSION` policy.** Any change to simulation behaviour — a rule, a §4.1.1
 reading, a tuning number, the rng's draw order, anything that alters how a
 recorded action log replays — bumps `SIM_VERSION` in `src/core/state.js` and
-re-records `tests/fixtures/seed42-3000.js` in the **same commit**. A fixture
+re-records `tests/fixtures/clears-wave-one.js` in the **same commit**. A fixture
 whose `simVersion` does not match fails loudly instead of replaying. There is
 no regenerate mode, no `--update` flag, no environment variable that rewrites
 the expected hash: if the replay gate fails, a human decides whether the change
@@ -92,9 +95,12 @@ non-integers. Every simulation field is an integer; if you need a float in the
 state, stop and say why.
 
 Everything else — drop distance, speeds, UFO interval, shield shape, hitbox
-widths, missile survival percentages, decay curve, audio frequencies — is our
-tuning and lives in one exported constants object. Never describe our tuning
-as authentic.
+widths, missile survival percentages, audio frequencies — is our tuning and
+lives in one exported constants object, `TUNING` in `src/core/constants.js`.
+The phosphor decay curve is also ours but is **not** in that object: it is a
+half-life in steps whose sole source is `src/tokens.js`, and no module under
+`src/core/` may define a decay, half-life or colour constant of its own.
+Never describe our tuning as authentic.
 
 ## Accessibility, which is a requirement and not a polish pass
 

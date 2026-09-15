@@ -35,7 +35,7 @@ export const TUNING = Object.freeze({
   // --- shots --------------------------------------------------------------
   PLAYER_SHOT_W: 1,
   PLAYER_SHOT_H: 4,
-  PLAYER_SHOT_SPEED: 4, // px per step, upward; swept 1px at a time
+  PLAYER_SHOT_SPEED: 3, // px per step, upward; swept 1px at a time
   INVADER_SHOT_W: 3,
   INVADER_SHOT_H: 6,
   INVADER_SHOT_SPEED: 2, // px per step, downward; swept 1px at a time
@@ -116,9 +116,6 @@ export const TUNING = Object.freeze({
   // --- waves --------------------------------------------------------------
   WAVE_CLEAR_DELAY_STEPS: 60,
 
-  // --- phosphor decay: aliens alive -> per-step intensity multiplier -------
-  // Linear between the two endpoints; Phase 3b consumes it.
-  DECAY_AT_55: 0.96,
-  DECAY_AT_1: 0.55,
-  DECAY_REDUCED_MOTION: 0.55,
+  // Phosphor persistence is a render concern and lives in src/tokens.js as a
+  // half-life in steps (spec 5.11). Nothing about it belongs here.
 });

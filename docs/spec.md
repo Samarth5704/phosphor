@@ -141,6 +141,14 @@ reviewer can find them in one place.
 - Cannon movement speed, shot speeds (player and invader)
 - UFO appearance interval and traversal speed
 - Shield bitmap layout and erosion mask shape
+- The post-wave clear delay: 60 steps (`TUNING.WAVE_CLEAR_DELAY_STEPS` in
+  `src/core/constants.js`) between the last alien dying and the next wave's
+  rack appearing. Only the timer runs during it. The name says what it is
+  ("wave clear" as in a cleared wave, not a screen clear); the one thing it
+  does not say is that the cannon is reset to its start x when the next wave
+  begins, which `startWave` does. It is pinned by the replay fixture
+  `tests/fixtures/clears-wave-one.js`, whose wave-2 step is the last kill
+  plus exactly this delay, so changing it bumps `SIM_VERSION`.
 - Wave 1 starting rack height and the per-wave drop distance within the
   documented 9-wave cycle (the cycle itself is §4.1). **These are coupled to
   `SHIELD_Y`:** the wave-9 rack starts at `RACK_START_Y + 8 ×
@@ -155,7 +163,10 @@ reviewer can find them in one place.
 - Missile survival probabilities when the player's shot meets an invader
   missile (the asymmetry is §4.1; our numbers are rolling 20%, plunger 20%,
   squiggly 95%)
-- Phosphor decay curve: the mapping from aliens-alive to decay constant
+- Phosphor decay curve: the mapping from aliens-alive to a half-life in steps.
+  **`src/tokens.js` is its sole source.** It is a render concern (§5.11) and
+  no module under `src/core/` defines a decay, half-life or colour constant
+  of its own; `tests/tokens.test.js` scans for one.
 - Audio frequencies, envelopes and durations
 
 ---
@@ -213,6 +224,49 @@ keyed nodes.
 alpha with `destination-out`: alpha quantises to 1/255 and leaves permanent
 residue that never clears. Because the buffer is a typed array, decay is a pure
 function and is unit tested.
+
+**5.11 Nothing in `src/tokens.js` may enter the hashed simulation state.**
+Decay, ramp, gel bands and colours are render concerns. `src/core/` never
+imports `tokens.js`, and no token value is ever written onto a state object.
+If a decay value reached the state, the replay fixture would depend on visual
+tuning and every colour tweak would invalidate determinism. Decay is expressed
+as a **half-life in steps**, never as a per-step multiplier, and the slow
+endpoint is derived from motion rather than chosen by eye: a moving object's
+visible trail at a 10% cutoff is `speed × halfLife × log2(10)`, and the player
+shot's trail at 55 aliens must be 25–40% of the field height so a shot fired at
+wave start does not streak the whole screen. With `PLAYER_SHOT_SPEED` 3 that
+bounds the half-life to 6.4–10.3 steps; it is **8 steps at 55 aliens** (79.7 px,
+31%), **2 steps at 1 alien**, linear in aliens alive between (5 at 28), pinned
+to 2 under `prefers-reduced-motion`; `decayPerStep = 2 ** (-1 / halfLife)` is
+derived from it and only from it. The test is deliberately coupled to
+`TUNING.PLAYER_SHOT_SPEED` so a speed change fails there — and a speed change
+is a simulation change, so it also bumps `SIM_VERSION` and re-records the
+fixture (simVersion 1 → 2 did exactly this).
+
+**The rack crossing into the green band as it descends is intended.** The
+gels model cellophane fixed to the glass: a band tints whatever is drawn under
+it, so a rack that has dropped low enough goes green, exactly as the original's
+bottom rows did. 3b's review should not read that as a tint bug. The converse
+constraint is that no alien *starts* a wave inside the orange band; the tokens
+test pins every row of waves 1–9 against the band's edges.
+
+**The cannon's smear is a function of hold duration, not speed alone.** At
+1 px/step a trail is only as long as the distance covered while its oldest
+pixel is still above the 10% cutoff, so the full trail needs `halfLife ×
+log2(10)` consecutive steps of held movement — 26.6 steps (0.44 s) at 55
+aliens, 6.6 steps (0.11 s) at 1 — and a tap leaves a fraction of it.
+`fullTrailSteps(aliensAlive)` in `tokens.js` gives the number; Phase 3b's
+review should look at a held move, not a tap, when judging the cannon. `INTENSITY_FLOOR`,
+the snap-to-zero threshold, is defined in ramp-output space as the boundary
+below which `rampGrey()` returns 0, so the snap never changes a displayed
+pixel. The display is monochrome — the ramp maps
+intensity to grey and carries no hue — and colour comes from gel bands applied
+by row, as the original cabinet's cellophane strips did: orange over the UFO
+row (y 32–55, ending where the wave-1 rack's top row begins at 56), green over
+the shields and cannon (y 184–255), untinted between. Tokens are the
+source and CSS custom properties are generated from them by `applyTokens()`;
+no colour is declared twice. `tests/tokens.test.js` prints every HUD contrast
+ratio and asserts the state carries no token value.
 
 ---
 
@@ -308,7 +362,7 @@ no `node:crypto`, so the same code runs in the browser for stretch item 2.
 behaviour — anything that alters how a recorded action log replays, including
 a tuning number in `constants.js`, a §4.1.1 reading, or the rng's draw order —
 bumps `SIM_VERSION` in `src/core/state.js` and re-records
-`tests/fixtures/seed42-3000.js` **in the same commit**. The replayer refuses a
+`tests/fixtures/clears-wave-one.js` **in the same commit**. The replayer refuses a
 fixture whose `simVersion` differs from the current one and says so, rather
 than replaying and failing on the hash or, worse, passing. There is no
 regenerate mode, `--update` flag or environment variable that rewrites the
@@ -330,11 +384,22 @@ Tests:
 
 ### Phase 3a — Design tokens only
 
-One file. Colour ramp for the phosphor field, HUD colours, spacing scale, type
-scale, the decay curve constants, the timing constants. Nothing consumes it yet.
+One file, `src/tokens.js`. The monochrome intensity ramp, the gel band map,
+decay as half-life in steps with `halfLifeFor()` and `decayPerStep()`, the
+reduced-motion half-life, HUD colours as foreground/background pairs, spacing
+scale, type scale, and `applyTokens()` that generates the CSS custom
+properties. Nothing consumes it yet. See §5.11 for the constraint that none of
+it may reach the simulation state.
 
-Plus the contrast test: every HUD foreground/background pair prints its computed
-ratio and fails below 4.5:1.
+Tests:
+
+- every HUD foreground/background pair prints its computed WCAG ratio and fails below 4.5:1
+- `halfLifeFor` is monotonic from 55 aliens down to 1 and no two adjacent counts share a half-life
+- `halfLifeFor(55)` and `halfLifeFor(1)` return the documented endpoints
+- `decayPerStep` applied `halfLifeFor(n)` times to 1.0 leaves 0.5, for n at 55, 28 and 1
+- 1.0 decayed at the 1-alien rate falls below 1/255 sooner than at the 55-alien rate, and both reach exactly 0
+- the gel bands do not overlap and with the untinted region cover every y from 0 to 255
+- the serialised simulation state contains no tokens value
 
 **Stop, and this is a review checkpoint.** Reviewing a token file takes a
 minute; reskinning finished components takes an evening. Do not start 3b until
