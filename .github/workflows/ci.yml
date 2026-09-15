@@ -1,0 +1,36 @@
+# CI. Four gates, each its own named step so the log says which one failed.
+#
+# There is no install step: this repo has no dependencies and therefore no
+# package-lock.json. `npm ci` exits non-zero without a lockfile and
+# `cache: npm` fails the same way, so neither appears here.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Node version
+        run: node --version
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Zero-test guard
+        run: npm run test:guard
+
+      - name: Replay gate
+        run: npm run test:replay
+
+      - name: Purity scan
+        run: npm run test:purity

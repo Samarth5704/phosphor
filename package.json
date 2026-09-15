@@ -6,6 +6,8 @@
   "engines": { "node": ">=24" },
   "scripts": {
     "test": "node --test \"tests/*.test.js\"",
-    "test:guard": "node tests/zero-test-guard.mjs tests"
+    "test:guard": "node tests/zero-test-guard.mjs tests",
+    "test:replay": "node --test tests/replay.test.js",
+    "test:purity": "node --test tests/purity.test.js"
   }
 }

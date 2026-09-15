@@ -290,16 +290,41 @@ Tests, written first:
 
 ### Phase 2 — Determinism, replay, CI
 
-Record `{seed, steps, actions[]}`. Replay it through the core and hash the final
-state. Commit a fixture. Add the GitHub Actions workflow that runs the suite,
-the replay gate, and the purity scan, all failing the build.
+Record `{simVersion, seed, steps, actions[]}`, where `actions` holds one
+`{step, action, phase}` per action that occurred and nothing for silent steps.
+Replay it through the core and hash the final state. Commit a fixture. Add the
+GitHub Actions workflow that runs the suite, the zero-test guard, the replay
+gate, and the purity scan, all failing the build.
+
+**The hash input is a canonical encoding, not `JSON.stringify`.**
+`src/core/serialise.js` sorts object keys, encodes `Uint8Array` length and
+bytes directly, gives `undefined` its own marker so it differs from a deleted
+field, gives `-0` its own marker so it differs from `0`, and rejects any
+non-integer number, because a float in the state would make the hash
+platform-sensitive. `src/core/hash.js` is FNV-1a in plain integer arithmetic,
+no `node:crypto`, so the same code runs in the browser for stretch item 2.
+
+**`SIM_VERSION` policy.** From the Phase 2 commit on, any change to simulation
+behaviour — anything that alters how a recorded action log replays, including
+a tuning number in `constants.js`, a §4.1.1 reading, or the rng's draw order —
+bumps `SIM_VERSION` in `src/core/state.js` and re-records
+`tests/fixtures/seed42-3000.js` **in the same commit**. The replayer refuses a
+fixture whose `simVersion` differs from the current one and says so, rather
+than replaying and failing on the hash or, worse, passing. There is no
+regenerate mode, `--update` flag or environment variable that rewrites the
+expected hash: a changed hash is a human decision, made by editing the fixture
+deliberately.
 
 Tests:
 
-- replaying a 3,000-step recorded log against seed 42 produces a byte-identical state hash
+- replaying a 3,000-step recorded log against seed 42 reproduces the hash committed in the fixture as a literal
 - two runs with the same seed and an empty action log produce identical UFO appearance steps
 - a fixture recorded against an older `SIM_VERSION` fails loudly rather than replaying and silently passing
 - the purity scan fails when `Math.random` is introduced anywhere under `src/core/`
+- a state containing a non-integer number fails the serialiser
+- a state field set to `undefined` hashes differently from the same state with that field deleted
+- two states differing only in the order their keys were assigned hash identically
+- a state differing only in the rng draw counter hashes differently
 
 **Stop.** Report the workflow run URL and the hash.
 

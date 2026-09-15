@@ -76,6 +76,21 @@ The readings in `docs/spec.md` §4.1.1 (freeze counted after the kill step;
 FIRE edge-triggered) are decisions, not defaults. Changing one bumps
 `SIM_VERSION`.
 
+**`SIM_VERSION` policy.** Any change to simulation behaviour — a rule, a §4.1.1
+reading, a tuning number, the rng's draw order, anything that alters how a
+recorded action log replays — bumps `SIM_VERSION` in `src/core/state.js` and
+re-records `tests/fixtures/seed42-3000.js` in the **same commit**. A fixture
+whose `simVersion` does not match fails loudly instead of replaying. There is
+no regenerate mode, no `--update` flag, no environment variable that rewrites
+the expected hash: if the replay gate fails, a human decides whether the change
+was intended. Never edit `expectedHash` to make the gate pass.
+
+**The state hash is a canonical encoding, never `JSON.stringify`.**
+`src/core/serialise.js` sorts keys, encodes `Uint8Array` bytes directly,
+distinguishes `undefined` from deleted and `-0` from `0`, and rejects
+non-integers. Every simulation field is an integer; if you need a float in the
+state, stop and say why.
+
 Everything else — drop distance, speeds, UFO interval, shield shape, hitbox
 widths, missile survival percentages, decay curve, audio frequencies — is our
 tuning and lives in one exported constants object. Never describe our tuning

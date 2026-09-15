@@ -1,7 +1,7 @@
 // Shared helpers for the Phase 1 suite. Not a test file: node --test only
 // picks up *.test.js under tests/.
-import { createState, step } from '../src/core/state.js';
-import { alienIndex, alienHomeX, alienHomeY } from '../src/core/rack.js';
+import { createState, step, ACTIONS } from '../src/core/state.js';
+import { alienIndex, alienHomeX, alienHomeY, lowestLivingInColumn } from '../src/core/rack.js';
 import { RULES } from '../src/core/rules.js';
 import { TUNING } from '../src/core/constants.js';
 
@@ -63,6 +63,44 @@ export function rackSnapshot(state) {
     originX: r.originX, originY: r.originY, dir: r.dir, cursor: r.cursor,
     aliens: r.aliens.map((a) => [a.alive ? 1 : 0, a.x, a.y]),
   });
+}
+
+// A small deterministic bot, shared by the playthrough test and the replay
+// fixture: park under the nearest column's lowest alien,
+// fire whenever the slot is free, sidestep invader shots that get close.
+export function botActions(s, mem) {
+  const actions = [];
+  const cannonMid = s.cannon.x + TUNING.CANNON_W / 2;
+  let bestCol = -1;
+  let best = Infinity;
+  for (let c = 0; c < RULES.RACK_COLS; c++) {
+    const idx = lowestLivingInColumn(s.rack, c);
+    if (idx === -1) continue;
+    const d = Math.abs(s.rack.aliens[idx].x + TUNING.ALIEN_W_BOTTOM / 2 - cannonMid);
+    if (d < best) { best = d; bestCol = c; }
+  }
+  const danger = s.invaderShots.find((sh) => sh.y > 150 && Math.abs(sh.x - cannonMid) < 12);
+  let want = null;
+  if (danger) {
+    want = danger.x < cannonMid ? ACTIONS.MOVE_RIGHT : ACTIONS.MOVE_LEFT;
+  } else if (bestCol >= 0) {
+    const a = s.rack.aliens[lowestLivingInColumn(s.rack, bestCol)];
+    const dx = a.x + TUNING.ALIEN_W_BOTTOM / 2 - cannonMid;
+    want = dx > 1 ? ACTIONS.MOVE_RIGHT : dx < -1 ? ACTIONS.MOVE_LEFT : null;
+  }
+  if (want !== mem.held) {
+    if (mem.held) actions.push({ step: s.step, action: mem.held, phase: 'up' });
+    if (want) actions.push({ step: s.step, action: want, phase: 'down' });
+    mem.held = want;
+  }
+  if (!s.playerShot && !danger && best < 4 && !mem.fireDown) {
+    actions.push({ step: s.step, action: ACTIONS.FIRE, phase: 'down' });
+    mem.fireDown = true;
+  } else if (mem.fireDown) {
+    actions.push({ step: s.step, action: ACTIONS.FIRE, phase: 'up' });
+    mem.fireDown = false;
+  }
+  return actions;
 }
 
 export { TUNING, RULES };

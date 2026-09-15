@@ -1,45 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createState, step, aliensAlive, ACTIONS } from '../src/core/state.js';
-import { lowestLivingInColumn } from '../src/core/rack.js';
-import { TUNING as T, RULES as R } from './helpers.js';
-
-// A small deterministic bot: park under the nearest column's lowest alien,
-// fire whenever the slot is free, sidestep invader shots that get close.
-function botActions(s, mem) {
-  const actions = [];
-  const cannonMid = s.cannon.x + T.CANNON_W / 2;
-  let bestCol = -1;
-  let best = Infinity;
-  for (let c = 0; c < R.RACK_COLS; c++) {
-    const idx = lowestLivingInColumn(s.rack, c);
-    if (idx === -1) continue;
-    const d = Math.abs(s.rack.aliens[idx].x + T.ALIEN_W_BOTTOM / 2 - cannonMid);
-    if (d < best) { best = d; bestCol = c; }
-  }
-  const danger = s.invaderShots.find((sh) => sh.y > 150 && Math.abs(sh.x - cannonMid) < 12);
-  let want = null;
-  if (danger) {
-    want = danger.x < cannonMid ? ACTIONS.MOVE_RIGHT : ACTIONS.MOVE_LEFT;
-  } else if (bestCol >= 0) {
-    const a = s.rack.aliens[lowestLivingInColumn(s.rack, bestCol)];
-    const dx = a.x + T.ALIEN_W_BOTTOM / 2 - cannonMid;
-    want = dx > 1 ? ACTIONS.MOVE_RIGHT : dx < -1 ? ACTIONS.MOVE_LEFT : null;
-  }
-  if (want !== mem.held) {
-    if (mem.held) actions.push({ step: s.step, action: mem.held, phase: 'up' });
-    if (want) actions.push({ step: s.step, action: want, phase: 'down' });
-    mem.held = want;
-  }
-  if (!s.playerShot && !danger && best < 4 && !mem.fireDown) {
-    actions.push({ step: s.step, action: ACTIONS.FIRE, phase: 'down' });
-    mem.fireDown = true;
-  } else if (mem.fireDown) {
-    actions.push({ step: s.step, action: ACTIONS.FIRE, phase: 'up' });
-    mem.fireDown = false;
-  }
-  return actions;
-}
+import { createState, step, aliensAlive } from '../src/core/state.js';
+import { botActions, TUNING as T, RULES as R } from './helpers.js';
 
 function checkInvariants(s) {
   const int = (v, what) => assert.ok(Number.isInteger(v), `${what} is not an integer: ${v}`);
